@@ -73,6 +73,8 @@ func (s *Server) Router() (http.Handler, error) {
 			r.Delete("/{id}", s.handleDeleteAsset)
 			r.Post("/{id}/scan", s.handleScanAsset)
 			r.Get("/{id}/scans", s.handleListAssetScans)
+			r.Get("/{id}/diff", s.handleAssetDiff)
+			r.Get("/{id}/score-history", s.handleScoreHistory)
 		})
 
 		r.Post("/scan", s.handleScanAll)

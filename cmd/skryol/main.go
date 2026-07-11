@@ -20,6 +20,7 @@ import (
 	"github.com/t0mer/skryol/internal/keys"
 	"github.com/t0mer/skryol/internal/logging"
 	"github.com/t0mer/skryol/internal/metrics"
+	"github.com/t0mer/skryol/internal/processor"
 	"github.com/t0mer/skryol/internal/scanner"
 	"github.com/t0mer/skryol/internal/shodan"
 	"github.com/t0mer/skryol/internal/version"
@@ -91,6 +92,8 @@ func run() error {
 	}
 
 	scanEngine := scanner.New(database, shodanClient, keyService, m, log, cfg.Scanner)
+	proc := processor.New(database, m, log, nil)
+	scanEngine.SetProcessor(proc)
 	if err := scanEngine.Start(); err != nil {
 		return fmt.Errorf("starting scan scheduler: %w", err)
 	}
