@@ -162,7 +162,10 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("auth.username", "admin")
 	v.SetDefault("auth.password", "")
 	v.SetDefault("auth.session_secret", "")
-	v.SetDefault("auth.guard_metrics", false)
+	// Secure by default: when auth is enabled, /metrics (which carries asset
+	// identifiers and scores in its labels) is guarded too. Operators scraping
+	// over a trusted network can opt out with auth.guard_metrics=false.
+	v.SetDefault("auth.guard_metrics", true)
 }
 
 func (c *Config) normalize() {

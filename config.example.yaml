@@ -60,5 +60,8 @@ auth:
   # Random secret for signing session cookies. If blank, an ephemeral secret is
   # generated at startup (sessions reset on restart).
   session_secret: ""
-  # Require auth for /metrics too (default: metrics open for scraping).
-  guard_metrics: false
+  # When auth is enabled, /metrics is guarded by default because its labels
+  # carry asset identifiers and scores. Set false to keep /metrics open for
+  # Prometheus scraping over a trusted network. (No effect when auth.enabled is
+  # false — with nothing to protect, /metrics is always open.)
+  guard_metrics: true

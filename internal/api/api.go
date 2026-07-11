@@ -63,10 +63,16 @@ func (s *Server) Router() (http.Handler, error) {
 		r.Use(corsMiddleware)
 	}
 
-	// Operational endpoints.
+	// Operational endpoints. /healthz is always open (liveness). The API
+	// reference reveals the full endpoint surface, so it is gated behind auth
+	// when auth is enabled.
 	r.Get("/healthz", s.handleHealth)
-	r.Get("/api/docs", s.handleAPIDocs)
-	r.Get("/api/docs/openapi.yaml", s.handleOpenAPISpec)
+	r.With(s.requireAuth).Get("/api/docs", s.handleAPIDocs)
+	r.With(s.requireAuth).Get("/api/docs/openapi.yaml", s.handleOpenAPISpec)
+
+	// /metrics carries asset identifiers and scores in its labels. When auth is
+	// enabled it is guarded by default (auth.guard_metrics); operators scraping
+	// over a trusted network can opt out to keep it open.
 	metricsHandler := promhttp.HandlerFor(s.Metrics.Registry, promhttp.HandlerOpts{})
 	if s.Auth != nil && s.Auth.Enabled() && s.Auth.GuardMetrics() {
 		r.With(s.requireAuth).Handle("/metrics", metricsHandler)
