@@ -1,4 +1,5 @@
 import { Routes, Route } from "react-router-dom";
+import { AuthGate } from "./components/AuthGate";
 import { Layout } from "./components/Layout";
 import { Dashboard } from "./pages/Dashboard";
 import { Assets } from "./pages/Assets";
@@ -9,6 +10,7 @@ import { SettingsPage } from "./pages/Settings";
 
 export default function App() {
   return (
+    <AuthGate>
     <Layout>
       <Routes>
         <Route path="/" element={<Dashboard />} />
@@ -19,5 +21,6 @@ export default function App() {
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </Layout>
+    </AuthGate>
   );
 }

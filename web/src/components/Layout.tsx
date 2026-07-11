@@ -1,9 +1,23 @@
 import { ReactNode, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { LayoutDashboard, Radar, Bell, Settings, Menu, X, KeyRound } from "lucide-react";
+import { LayoutDashboard, Radar, Bell, Settings, Menu, X, KeyRound, LogOut } from "lucide-react";
 import { api, ShodanKey } from "@/lib/api";
 import clsx from "clsx";
+
+function LogoutButton() {
+  const { data } = useQuery({ queryKey: ["auth-me"], queryFn: () => api.get<{ auth_required: boolean }>("/auth/me"), retry: false });
+  if (!data?.auth_required) return null;
+  const logout = async () => {
+    await api.post("/auth/logout");
+    window.location.reload();
+  };
+  return (
+    <button className="btn-ghost rounded-md p-1.5" title="Sign out" onClick={logout} aria-label="Sign out">
+      <LogOut size={16} />
+    </button>
+  );
+}
 
 const nav = [
   { to: "/", label: "Dashboard", icon: LayoutDashboard, end: true },
@@ -101,7 +115,10 @@ export function Layout({ children }: { children: ReactNode }) {
               {loc.pathname === "/" ? "Dashboard" : loc.pathname.split("/")[1]}
             </span>
           </div>
-          <KeyHealth />
+          <div className="flex items-center gap-3">
+            <KeyHealth />
+            <LogoutButton />
+          </div>
         </header>
         <main className="mx-auto w-full max-w-7xl flex-1 p-4 lg:p-6">{children}</main>
       </div>
