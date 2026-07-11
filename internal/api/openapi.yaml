@@ -1,0 +1,333 @@
+openapi: 3.1.0
+info:
+  title: Skryol API
+  description: >
+    Skryol is a self-hosted external attack-surface monitor built on the Shodan
+    API. Every UI action maps to an endpoint under `/api/v1`.
+
+    **Authentication:** when `auth.enabled` is true, all `/api/v1` endpoints
+    except `/health`, `/auth/login`, `/auth/logout`, and `/auth/me` require
+    either a session cookie (from `POST /auth/login`) or an API token supplied
+    via the `X-API-Token` header or `Authorization: Bearer <token>`. When auth
+    is disabled (home-lab default), the API is open.
+  version: "2026.7.0"
+  license:
+    name: Apache-2.0
+servers:
+  - url: /api/v1
+security:
+  - {}
+  - apiToken: []
+  - bearer: []
+tags:
+  - name: Assets
+  - name: Scans
+  - name: Diff
+  - name: Dashboard
+  - name: Shodan Keys
+  - name: Channels
+  - name: Rules
+  - name: Alerts
+  - name: Settings
+  - name: Auth
+  - name: Backup
+paths:
+  /health:
+    get:
+      tags: [Dashboard]
+      summary: Health check
+      security: []
+      responses:
+        "200": { description: OK }
+
+  /assets:
+    get:
+      tags: [Assets]
+      summary: List assets
+      responses:
+        "200":
+          description: Assets
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: "#/components/schemas/Asset" } }
+    post:
+      tags: [Assets]
+      summary: Add an asset
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/AssetInput" }
+      responses:
+        "201": { description: Created, content: { application/json: { schema: { $ref: "#/components/schemas/Asset" } } } }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "409": { description: Duplicate asset }
+
+  /assets/{id}:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+    get:
+      tags: [Assets]
+      summary: Get an asset
+      responses:
+        "200": { description: Asset, content: { application/json: { schema: { $ref: "#/components/schemas/Asset" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    put:
+      tags: [Assets]
+      summary: Update an asset
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/AssetInput" } } } }
+      responses:
+        "200": { description: Updated, content: { application/json: { schema: { $ref: "#/components/schemas/Asset" } } } }
+        "404": { $ref: "#/components/responses/NotFound" }
+    delete:
+      tags: [Assets]
+      summary: Delete an asset
+      responses:
+        "204": { description: Deleted }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /assets/{id}/scan:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post:
+      tags: [Scans]
+      summary: Scan an asset now
+      responses:
+        "200": { description: Scan result, content: { application/json: { schema: { $ref: "#/components/schemas/Scan" } } } }
+
+  /assets/{id}/scans:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [Scans]
+      summary: List an asset's scans
+      responses:
+        "200": { description: Scans, content: { application/json: { schema: { type: array, items: { $ref: "#/components/schemas/Scan" } } } } }
+
+  /assets/{id}/diff:
+    parameters:
+      - { name: id, in: path, required: true, schema: { type: string } }
+      - { name: from, in: query, schema: { type: string }, description: Baseline scan id }
+      - { name: to, in: query, schema: { type: string }, description: Current scan id }
+    get:
+      tags: [Diff]
+      summary: Compare two scans
+      responses:
+        "200": { description: Diff summary, content: { application/json: { schema: { $ref: "#/components/schemas/DiffSummary" } } } }
+
+  /assets/{id}/score-history:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [Diff]
+      summary: Score history time series
+      responses:
+        "200": { description: Score points }
+
+  /scan:
+    post:
+      tags: [Scans]
+      summary: Scan all enabled assets
+      responses:
+        "200": { description: Batch result }
+
+  /scans/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get:
+      tags: [Scans]
+      summary: Get a scan with findings and raw report
+      responses:
+        "200": { description: Scan detail }
+
+  /dashboard:
+    get:
+      tags: [Dashboard]
+      summary: Fleet dashboard summary
+      responses:
+        "200": { description: Dashboard }
+
+  /shodan/keys:
+    get: { tags: [Shodan Keys], summary: List keys, responses: { "200": { description: Keys } } }
+    post:
+      tags: [Shodan Keys]
+      summary: Add a key
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/KeyInput" } } } }
+      responses: { "201": { description: Created }, "412": { description: Encryption key not configured } }
+  /shodan/keys/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    put: { tags: [Shodan Keys], summary: Update a key, responses: { "200": { description: Updated } } }
+    delete: { tags: [Shodan Keys], summary: Delete a key, responses: { "204": { description: Deleted } } }
+  /shodan/keys/{id}/refresh:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { tags: [Shodan Keys], summary: Refresh credit/health for all keys, responses: { "200": { description: Keys } } }
+
+  /channels:
+    get: { tags: [Channels], summary: List channels (secrets masked), responses: { "200": { description: Channels } } }
+    post:
+      tags: [Channels]
+      summary: Add a channel
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/ChannelInput" } } } }
+      responses: { "201": { description: Created } }
+  /channels/test:
+    post: { tags: [Channels], summary: Send a test to ad-hoc config, responses: { "200": { description: Sent } } }
+  /channels/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    put: { tags: [Channels], summary: Update a channel, responses: { "200": { description: Updated } } }
+    delete: { tags: [Channels], summary: Delete a channel, responses: { "204": { description: Deleted } } }
+  /channels/{id}/test:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    post: { tags: [Channels], summary: Send a test to a stored channel, responses: { "200": { description: Sent } } }
+
+  /rules:
+    get: { tags: [Rules], summary: List rules, responses: { "200": { description: Rules } } }
+    post:
+      tags: [Rules]
+      summary: Create a rule
+      requestBody: { required: true, content: { application/json: { schema: { $ref: "#/components/schemas/RuleInput" } } } }
+      responses: { "201": { description: Created } }
+  /rules/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    get: { tags: [Rules], summary: Get a rule, responses: { "200": { description: Rule } } }
+    put: { tags: [Rules], summary: Update a rule, responses: { "200": { description: Updated } } }
+    delete: { tags: [Rules], summary: Delete a rule, responses: { "204": { description: Deleted } } }
+
+  /alerts/events:
+    get: { tags: [Alerts], summary: Recent alert firings (audit log), responses: { "200": { description: Events } } }
+
+  /settings:
+    get: { tags: [Settings], summary: Get settings, responses: { "200": { description: Settings } } }
+    put: { tags: [Settings], summary: Update scoring weights, responses: { "200": { description: Settings } } }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      summary: Log in (sets session cookie)
+      security: []
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { username: { type: string }, password: { type: string } } } } } }
+      responses: { "200": { description: Authenticated }, "401": { description: Invalid credentials } }
+  /auth/logout:
+    post: { tags: [Auth], summary: Log out, security: [], responses: { "200": { description: Logged out } } }
+  /auth/me:
+    get: { tags: [Auth], summary: Auth status, security: [], responses: { "200": { description: Status } } }
+  /auth/tokens:
+    get: { tags: [Auth], summary: List API tokens, responses: { "200": { description: Tokens } } }
+    post: { tags: [Auth], summary: Create an API token (returned once), responses: { "201": { description: Token } } }
+  /auth/tokens/{id}:
+    parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+    delete: { tags: [Auth], summary: Revoke a token, responses: { "204": { description: Revoked } } }
+
+  /export:
+    post:
+      tags: [Backup]
+      summary: Export configuration bundle
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { mode: { type: string, enum: [none, instance_key, passphrase] }, passphrase: { type: string } } } } } }
+      responses: { "200": { description: Bundle } }
+  /import:
+    post:
+      tags: [Backup]
+      summary: Import a configuration bundle
+      requestBody: { required: true, content: { application/json: { schema: { type: object, properties: { bundle: { type: object }, passphrase: { type: string } } } } } }
+      responses: { "200": { description: Import result } }
+
+components:
+  securitySchemes:
+    apiToken:
+      type: apiKey
+      in: header
+      name: X-API-Token
+    bearer:
+      type: http
+      scheme: bearer
+  responses:
+    BadRequest:
+      description: Invalid request
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+    NotFound:
+      description: Not found
+      content: { application/json: { schema: { $ref: "#/components/schemas/Error" } } }
+  schemas:
+    Error:
+      type: object
+      properties: { error: { type: string } }
+    AssetInput:
+      type: object
+      required: [type, value]
+      properties:
+        type: { type: string, enum: [ip, fqdn, domain, cidr] }
+        value: { type: string }
+        label: { type: string }
+        notes: { type: string }
+        enabled: { type: boolean }
+        rescan: { type: boolean }
+    Asset:
+      allOf:
+        - $ref: "#/components/schemas/AssetInput"
+        - type: object
+          properties:
+            id: { type: string }
+            created_at: { type: string, format: date-time }
+            updated_at: { type: string, format: date-time }
+    Scan:
+      type: object
+      properties:
+        id: { type: string }
+        asset_id: { type: string }
+        status: { type: string, enum: [ok, partial, failed] }
+        score: { type: integer }
+        grade: { type: string }
+        highest_cvss: { type: number }
+        cve_count: { type: integer }
+        critical_count: { type: integer }
+        open_ports_count: { type: integer }
+        score_delta: { type: integer }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time }
+    DiffSummary:
+      type: object
+      properties:
+        added: { type: array, items: { $ref: "#/components/schemas/FindingChange" } }
+        removed: { type: array, items: { $ref: "#/components/schemas/FindingChange" } }
+        score_delta: { type: integer }
+        grade_from: { type: string }
+        grade_to: { type: string }
+        went_offline: { type: boolean }
+        came_online: { type: boolean }
+    FindingChange:
+      type: object
+      properties:
+        kind: { type: string }
+        key: { type: string }
+        target_ip: { type: string }
+        severity: { type: string }
+        cvss: { type: number }
+    KeyInput:
+      type: object
+      required: [secret]
+      properties:
+        label: { type: string }
+        secret: { type: string, writeOnly: true }
+        enabled: { type: boolean }
+        rate_per_second: { type: number }
+    ChannelInput:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [shoutrrr, greenapi, whatsapp_web] }
+        label: { type: string }
+        enabled: { type: boolean }
+        config: { type: object }
+    RuleInput:
+      type: object
+      required: [condition]
+      properties:
+        scope: { type: string, enum: [global, asset] }
+        asset_id: { type: string }
+        condition:
+          type: string
+          enum:
+            [new_open_port, new_cve, cve_cvss_at_least, score_drop_at_least,
+             grade_drops_below, default_password_detected, new_screenshot_service,
+             new_smb_share, new_exposed_database, cert_expired_or_selfsigned,
+             asset_offline, asset_online, scan_failed]
+        params: { type: object }
+        enabled: { type: boolean }
+        cooldown_seconds: { type: integer }
+        severity: { type: string }
+        channel_ids: { type: array, items: { type: string } }

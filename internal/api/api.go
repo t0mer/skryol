@@ -65,6 +65,8 @@ func (s *Server) Router() (http.Handler, error) {
 
 	// Operational endpoints.
 	r.Get("/healthz", s.handleHealth)
+	r.Get("/api/docs", s.handleAPIDocs)
+	r.Get("/api/docs/openapi.yaml", s.handleOpenAPISpec)
 	metricsHandler := promhttp.HandlerFor(s.Metrics.Registry, promhttp.HandlerOpts{})
 	if s.Auth != nil && s.Auth.Enabled() && s.Auth.GuardMetrics() {
 		r.With(s.requireAuth).Handle("/metrics", metricsHandler)
