@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/t0mer/skryol/internal/auth"
+	"github.com/t0mer/skryol/internal/backup"
 	"github.com/t0mer/skryol/internal/channels"
 	"github.com/t0mer/skryol/internal/config"
 	"github.com/t0mer/skryol/internal/crypto"
@@ -35,6 +36,7 @@ type Deps struct {
 	Scanner  *scanner.Scanner
 	Channels *channels.Service
 	Auth     *auth.Service
+	Backup   *backup.Service
 }
 
 // Server holds handler dependencies.
@@ -133,6 +135,9 @@ func (s *Server) Router() (http.Handler, error) {
 				r.Post("/", s.handleCreateToken)
 				r.Delete("/{id}", s.handleDeleteToken)
 			})
+
+			r.Post("/export", s.handleExport)
+			r.Post("/import", s.handleImport)
 		})
 	})
 

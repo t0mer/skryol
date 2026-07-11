@@ -17,6 +17,7 @@ import (
 	"github.com/t0mer/skryol/internal/alerts"
 	"github.com/t0mer/skryol/internal/api"
 	"github.com/t0mer/skryol/internal/auth"
+	"github.com/t0mer/skryol/internal/backup"
 	"github.com/t0mer/skryol/internal/channels"
 	"github.com/t0mer/skryol/internal/config"
 	"github.com/t0mer/skryol/internal/crypto"
@@ -140,6 +141,7 @@ func run() error {
 	}
 
 	channelService := channels.NewService(database, cipher)
+	backupService := backup.NewService(database, cipher, keyService)
 	alertEngine := alerts.New(database, channelService, m, log, cfg.Server.BaseURL)
 
 	scanEngine := scanner.New(database, shodanClient, keyService, m, log, cfg.Scanner)
@@ -164,6 +166,7 @@ func run() error {
 		Scanner:  scanEngine,
 		Channels: channelService,
 		Auth:     authService,
+		Backup:   backupService,
 	})
 	router, err := server.Router()
 	if err != nil {
