@@ -1,0 +1,57 @@
+# Skryol example configuration.
+#
+# Precedence (highest to lowest): command-line flags > environment variables
+# (SKRYOL_ prefix) > this YAML file > built-in defaults.
+#
+# Every key below can be overridden by an env var: upper-case the path and
+# replace "." with "_". For example, server.port -> SKRYOL_SERVER_PORT.
+
+server:
+  port: 8080
+  address: "0.0.0.0"
+  # Public base URL, used to build deep links in notifications. Optional.
+  base_url: ""
+  enable_cors: false
+
+log:
+  level: "info"    # debug | info | warning | error
+  format: "json"   # json | text
+
+database:
+  path: "/data/skryol.db"
+
+data:
+  # Directory for screenshots and other on-disk runtime files.
+  dir: "/data"
+
+crypto:
+  # AES-256-GCM key for secrets at rest. STRONGLY prefer the env var
+  # SKRYOL_CRYPTO_ENCRYPTION_KEY over putting the key in this file.
+  # 32 bytes; provide as base64 or a 64-char hex string.
+  encryption_key: ""
+
+shodan:
+  base_url: "https://api.shodan.io"
+  # Default per-key rate limit. With N keys, effective throughput is ~N * this.
+  requests_per_second: 1.0
+  max_retries: 4
+  timeout_seconds: 30
+
+scanner:
+  # Daily batch schedule (cron). Default: 03:00 every day.
+  schedule: "0 3 * * *"
+  # CIDR expansion / per-asset host cap guardrail.
+  max_hosts_per_asset: 256
+  # Bounded concurrency for per-asset scans (subordinate to per-key rate limits).
+  max_concurrency: 4
+  # 0 = keep all raw scans; otherwise prune raw reports older than N days.
+  retention_days: 0
+  # Timeout when waiting for an on-demand Shodan rescan to complete.
+  rescan_timeout_seconds: 300
+
+auth:
+  enabled: false
+  # Random secret for signing session cookies (required when auth.enabled).
+  session_secret: ""
+  # Require auth for /metrics too (default: metrics open for scraping).
+  guard_metrics: false
