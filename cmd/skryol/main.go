@@ -12,9 +12,11 @@ import (
 	"time"
 
 	"github.com/spf13/pflag"
+	"golang.org/x/term"
 
 	"github.com/t0mer/skryol/internal/alerts"
 	"github.com/t0mer/skryol/internal/api"
+	"github.com/t0mer/skryol/internal/auth"
 	"github.com/t0mer/skryol/internal/channels"
 	"github.com/t0mer/skryol/internal/config"
 	"github.com/t0mer/skryol/internal/crypto"
@@ -36,9 +38,37 @@ func main() {
 	}
 }
 
+// resetAdminPassword prompts for a new admin password (twice) and stores it.
+func resetAdminPassword(ctx context.Context, a *auth.Service) error {
+	fmt.Print("New admin password: ")
+	pw1, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+	if err != nil {
+		return fmt.Errorf("reading password: %w", err)
+	}
+	fmt.Print("Confirm password: ")
+	pw2, err := term.ReadPassword(int(syscall.Stdin))
+	fmt.Println()
+	if err != nil {
+		return fmt.Errorf("reading password: %w", err)
+	}
+	if len(pw1) < 8 {
+		return fmt.Errorf("password must be at least 8 characters")
+	}
+	if string(pw1) != string(pw2) {
+		return fmt.Errorf("passwords do not match")
+	}
+	if err := a.SetPassword(ctx, string(pw1)); err != nil {
+		return fmt.Errorf("setting password: %w", err)
+	}
+	fmt.Println("Admin password updated.")
+	return nil
+}
+
 func run() error {
 	fs := pflag.NewFlagSet("skryol", pflag.ContinueOnError)
 	showVersion := fs.Bool("version", false, "Print version and exit")
+	resetPassword := fs.Bool("reset-password", false, "Interactively reset the admin password and exit")
 	config.DefineFlags(fs)
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		return err
@@ -67,6 +97,21 @@ func run() error {
 		return fmt.Errorf("opening database: %w", err)
 	}
 	defer database.Close()
+
+	authService := auth.NewService(database, auth.Config{
+		Enabled:       cfg.Auth.Enabled,
+		Username:      cfg.Auth.Username,
+		Password:      cfg.Auth.Password,
+		SessionSecret: cfg.Auth.SessionSecret,
+		GuardMetrics:  cfg.Auth.GuardMetrics,
+	}, log)
+
+	if *resetPassword {
+		return resetAdminPassword(ctx, authService)
+	}
+	if err := authService.Bootstrap(ctx); err != nil {
+		return fmt.Errorf("bootstrapping auth: %w", err)
+	}
 
 	m := metrics.New()
 
@@ -118,6 +163,7 @@ func run() error {
 		Cipher:   cipher,
 		Scanner:  scanEngine,
 		Channels: channelService,
+		Auth:     authService,
 	})
 	router, err := server.Router()
 	if err != nil {
