@@ -12,22 +12,33 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/t0mer/skryol/internal/config"
+	"github.com/t0mer/skryol/internal/crypto"
 	"github.com/t0mer/skryol/internal/db"
+	"github.com/t0mer/skryol/internal/keys"
 	"github.com/t0mer/skryol/internal/metrics"
+	"github.com/t0mer/skryol/internal/shodan"
 	"github.com/t0mer/skryol/internal/web"
 )
 
-// Server holds the dependencies shared by all HTTP handlers.
-type Server struct {
-	cfg     *config.Config
-	db      *db.DB
-	log     *slog.Logger
-	metrics *metrics.Metrics
+// Deps bundles the dependencies shared by all HTTP handlers.
+type Deps struct {
+	Config  *config.Config
+	DB      *db.DB
+	Log     *slog.Logger
+	Metrics *metrics.Metrics
+	Keys    *keys.Service
+	Shodan  *shodan.Client
+	Cipher  *crypto.Cipher
 }
 
-// NewServer constructs the HTTP server dependencies.
-func NewServer(cfg *config.Config, database *db.DB, log *slog.Logger, m *metrics.Metrics) *Server {
-	return &Server{cfg: cfg, db: database, log: log, metrics: m}
+// Server holds handler dependencies.
+type Server struct {
+	Deps
+}
+
+// NewServer constructs the HTTP server.
+func NewServer(d Deps) *Server {
+	return &Server{Deps: d}
 }
 
 // Router builds the fully-wired chi router.
@@ -38,19 +49,35 @@ func (s *Server) Router() (http.Handler, error) {
 	r.Use(middleware.RealIP)
 	r.Use(s.requestLogger)
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.Timeout(60 * time.Second))
+	r.Use(middleware.Timeout(120 * time.Second))
 	r.Use(middleware.Compress(5))
-	if s.cfg.Server.EnableCORS {
+	if s.Config.Server.EnableCORS {
 		r.Use(corsMiddleware)
 	}
 
-	// Operational endpoints (never behind auth except optionally metrics).
+	// Operational endpoints.
 	r.Get("/healthz", s.handleHealth)
-	r.Handle("/metrics", promhttp.HandlerFor(s.metrics.Registry, promhttp.HandlerOpts{}))
+	r.Handle("/metrics", promhttp.HandlerFor(s.Metrics.Registry, promhttp.HandlerOpts{}))
 
-	// Versioned JSON API. Handlers are added phase by phase.
+	// Versioned JSON API.
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Get("/health", s.handleHealth)
+
+		r.Route("/assets", func(r chi.Router) {
+			r.Get("/", s.handleListAssets)
+			r.Post("/", s.handleCreateAsset)
+			r.Get("/{id}", s.handleGetAsset)
+			r.Put("/{id}", s.handleUpdateAsset)
+			r.Delete("/{id}", s.handleDeleteAsset)
+		})
+
+		r.Route("/shodan/keys", func(r chi.Router) {
+			r.Get("/", s.handleListKeys)
+			r.Post("/", s.handleCreateKey)
+			r.Put("/{id}", s.handleUpdateKey)
+			r.Delete("/{id}", s.handleDeleteKey)
+			r.Post("/{id}/refresh", s.handleRefreshKey)
+		})
 	})
 
 	// Embedded SPA with client-routing fallback.
@@ -71,7 +98,7 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 		next.ServeHTTP(ww, r)
-		s.log.Info("http request",
+		s.Log.Info("http request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", ww.Status(),
@@ -79,7 +106,7 @@ func (s *Server) requestLogger(next http.Handler) http.Handler {
 			"duration_ms", time.Since(start).Milliseconds(),
 			"request_id", middleware.GetReqID(r.Context()),
 		)
-		s.metrics.HTTPRequests.WithLabelValues(r.Method, http.StatusText(ww.Status())).Inc()
+		s.Metrics.HTTPRequests.WithLabelValues(r.Method, http.StatusText(ww.Status())).Inc()
 	})
 }
 

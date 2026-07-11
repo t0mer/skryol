@@ -15,9 +15,12 @@ import (
 
 	"github.com/t0mer/skryol/internal/api"
 	"github.com/t0mer/skryol/internal/config"
+	"github.com/t0mer/skryol/internal/crypto"
 	"github.com/t0mer/skryol/internal/db"
+	"github.com/t0mer/skryol/internal/keys"
 	"github.com/t0mer/skryol/internal/logging"
 	"github.com/t0mer/skryol/internal/metrics"
+	"github.com/t0mer/skryol/internal/shodan"
 	"github.com/t0mer/skryol/internal/version"
 )
 
@@ -62,7 +65,39 @@ func run() error {
 
 	m := metrics.New()
 
-	server := api.NewServer(cfg, database, log, m)
+	cipher, err := crypto.New(cfg.Crypto.EncryptionKey)
+	if err != nil {
+		return fmt.Errorf("initializing crypto: %w", err)
+	}
+	if !cipher.Enabled() {
+		log.Warn("no encryption key configured; Shodan keys and channel secrets cannot be stored (set SKRYOL_CRYPTO_ENCRYPTION_KEY)")
+	}
+
+	pool := shodan.NewKeyPool(cfg.Shodan.RequestsPerSecond)
+	shodanClient := shodan.New(pool, shodan.Options{
+		BaseURL:    cfg.Shodan.BaseURL,
+		MaxRetries: cfg.Shodan.MaxRetries,
+		Timeout:    time.Duration(cfg.Shodan.TimeoutSeconds) * time.Second,
+		Logger:     log,
+		OnRequest: func(endpoint, outcome string) {
+			m.ShodanRequests.WithLabelValues(endpoint, outcome).Inc()
+		},
+	})
+
+	keyService := keys.NewService(database, cipher, pool, log)
+	if err := keyService.Reload(ctx); err != nil {
+		return fmt.Errorf("loading shodan keys: %w", err)
+	}
+
+	server := api.NewServer(api.Deps{
+		Config:  cfg,
+		DB:      database,
+		Log:     log,
+		Metrics: m,
+		Keys:    keyService,
+		Shodan:  shodanClient,
+		Cipher:  cipher,
+	})
 	router, err := server.Router()
 	if err != nil {
 		return fmt.Errorf("building router: %w", err)

@@ -13,7 +13,7 @@ type healthResponse struct {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	status := "ok"
-	if err := s.db.PingContext(r.Context()); err != nil {
+	if err := s.DB.PingContext(r.Context()); err != nil {
 		status = "degraded"
 		writeJSON(w, http.StatusServiceUnavailable, healthResponse{Status: status, Version: version.Version})
 		return
