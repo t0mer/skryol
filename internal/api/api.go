@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/t0mer/skryol/internal/channels"
 	"github.com/t0mer/skryol/internal/config"
 	"github.com/t0mer/skryol/internal/crypto"
 	"github.com/t0mer/skryol/internal/db"
@@ -23,14 +24,15 @@ import (
 
 // Deps bundles the dependencies shared by all HTTP handlers.
 type Deps struct {
-	Config  *config.Config
-	DB      *db.DB
-	Log     *slog.Logger
-	Metrics *metrics.Metrics
-	Keys    *keys.Service
-	Shodan  *shodan.Client
-	Cipher  *crypto.Cipher
-	Scanner *scanner.Scanner
+	Config   *config.Config
+	DB       *db.DB
+	Log      *slog.Logger
+	Metrics  *metrics.Metrics
+	Keys     *keys.Service
+	Shodan   *shodan.Client
+	Cipher   *crypto.Cipher
+	Scanner  *scanner.Scanner
+	Channels *channels.Service
 }
 
 // Server holds handler dependencies.
@@ -87,6 +89,25 @@ func (s *Server) Router() (http.Handler, error) {
 			r.Delete("/{id}", s.handleDeleteKey)
 			r.Post("/{id}/refresh", s.handleRefreshKey)
 		})
+
+		r.Route("/channels", func(r chi.Router) {
+			r.Get("/", s.handleListChannels)
+			r.Post("/", s.handleCreateChannel)
+			r.Post("/test", s.handleTestChannel)
+			r.Put("/{id}", s.handleUpdateChannel)
+			r.Delete("/{id}", s.handleDeleteChannel)
+			r.Post("/{id}/test", s.handleTestChannel)
+		})
+
+		r.Route("/rules", func(r chi.Router) {
+			r.Get("/", s.handleListRules)
+			r.Post("/", s.handleCreateRule)
+			r.Get("/{id}", s.handleGetRule)
+			r.Put("/{id}", s.handleUpdateRule)
+			r.Delete("/{id}", s.handleDeleteRule)
+		})
+
+		r.Get("/alerts/events", s.handleListAlertEvents)
 	})
 
 	// Embedded SPA with client-routing fallback.

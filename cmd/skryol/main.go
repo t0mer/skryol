@@ -13,7 +13,9 @@ import (
 
 	"github.com/spf13/pflag"
 
+	"github.com/t0mer/skryol/internal/alerts"
 	"github.com/t0mer/skryol/internal/api"
+	"github.com/t0mer/skryol/internal/channels"
 	"github.com/t0mer/skryol/internal/config"
 	"github.com/t0mer/skryol/internal/crypto"
 	"github.com/t0mer/skryol/internal/db"
@@ -91,8 +93,12 @@ func run() error {
 		return fmt.Errorf("loading shodan keys: %w", err)
 	}
 
+	channelService := channels.NewService(database, cipher)
+	alertEngine := alerts.New(database, channelService, m, log, cfg.Server.BaseURL)
+
 	scanEngine := scanner.New(database, shodanClient, keyService, m, log, cfg.Scanner)
 	proc := processor.New(database, m, log, nil)
+	proc.SetAlertEvaluator(alertEngine)
 	scanEngine.SetProcessor(proc)
 	if err := scanEngine.Start(); err != nil {
 		return fmt.Errorf("starting scan scheduler: %w", err)
@@ -100,14 +106,15 @@ func run() error {
 	defer scanEngine.Stop()
 
 	server := api.NewServer(api.Deps{
-		Config:  cfg,
-		DB:      database,
-		Log:     log,
-		Metrics: m,
-		Keys:    keyService,
-		Shodan:  shodanClient,
-		Cipher:  cipher,
-		Scanner: scanEngine,
+		Config:   cfg,
+		DB:       database,
+		Log:      log,
+		Metrics:  m,
+		Keys:     keyService,
+		Shodan:   shodanClient,
+		Cipher:   cipher,
+		Scanner:  scanEngine,
+		Channels: channelService,
 	})
 	router, err := server.Router()
 	if err != nil {
