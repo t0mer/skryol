@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Pencil, RefreshCw, Send, KeyRound, Bell, SlidersHorizontal, Server } from "lucide-react";
+import { Plus, Trash2, Pencil, RefreshCw, Send, KeyRound, Bell, SlidersHorizontal, Server, Download, Upload } from "lucide-react";
 import { api, ShodanKey, Channel, ChannelType, ChannelConfig, Settings, ScoringWeights } from "@/lib/api";
 import { Panel, SectionTitle, Spinner, Toggle } from "@/components/ui";
 import { Modal } from "@/components/Modal";
@@ -14,8 +14,86 @@ export function SettingsPage() {
       <ShodanKeys />
       <Channels />
       <ScoringWeightsCard />
+      <BackupCard />
       <RuntimeInfo />
     </div>
+  );
+}
+
+// ---------- Backup / migrate ----------
+type Mode = "none" | "instance_key" | "passphrase";
+
+function BackupCard() {
+  const toast = useToast();
+  const [mode, setMode] = useState<Mode>("instance_key");
+  const [exportPass, setExportPass] = useState("");
+  const [importPass, setImportPass] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [result, setResult] = useState<string | null>(null);
+
+  const doExport = async () => {
+    setBusy(true);
+    try {
+      const bundle = await api.post<Record<string, unknown>>("/export", { mode, passphrase: exportPass });
+      const blob = new Blob([JSON.stringify(bundle, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "skryol-export.json";
+      a.click();
+      URL.revokeObjectURL(url);
+      toast("success", "Configuration exported");
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "Export failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const doImport = async (file: File) => {
+    setBusy(true);
+    setResult(null);
+    try {
+      const bundle = JSON.parse(await file.text());
+      const res = await api.post<{ created: Record<string, number>; updated: Record<string, number>; skipped: Record<string, number>; notes: string[] }>("/import", { bundle, passphrase: importPass });
+      const sum = (o: Record<string, number>) => Object.entries(o).map(([k, v]) => `${v} ${k}`).join(", ") || "none";
+      setResult(`Created: ${sum(res.created)} · Updated: ${sum(res.updated)} · Skipped: ${sum(res.skipped)}`);
+      toast("success", "Import complete");
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Panel className="p-4">
+      <SectionTitle eyebrow="Backup & migrate" title="Export / import configuration" />
+      <div className="grid gap-6 lg:grid-cols-2">
+        <div>
+          <div className="mb-2 text-sm font-medium text-ink">Export</div>
+          <label className="label">Secret handling</label>
+          <select className="input mb-3" value={mode} onChange={(e) => setMode(e.target.value as Mode)}>
+            <option value="none">None — omit secrets (import disabled, needs credentials)</option>
+            <option value="instance_key">Instance key — same encryption key required</option>
+            <option value="passphrase">Passphrase — portable across instances</option>
+          </select>
+          {mode === "passphrase" && (
+            <input className="input mb-3" type="password" placeholder="Export passphrase" value={exportPass} onChange={(e) => setExportPass(e.target.value)} />
+          )}
+          <button className="btn btn-primary" onClick={doExport} disabled={busy}><Download size={15} /> Download bundle</button>
+        </div>
+        <div>
+          <div className="mb-2 text-sm font-medium text-ink">Import</div>
+          <input className="input mb-3" type="password" placeholder="Passphrase (if bundle is passphrase-protected)" value={importPass} onChange={(e) => setImportPass(e.target.value)} />
+          <label className="btn cursor-pointer">
+            <Upload size={15} /> Choose bundle file…
+            <input type="file" accept="application/json" className="hidden" onChange={(e) => e.target.files?.[0] && doImport(e.target.files[0])} />
+          </label>
+          {result && <div className="mt-3 rounded-lg border border-line bg-canvas/40 p-3 text-xs text-muted">{result}</div>}
+        </div>
+      </div>
+    </Panel>
   );
 }
 
