@@ -16,6 +16,7 @@ import (
 	"github.com/t0mer/skryol/internal/db"
 	"github.com/t0mer/skryol/internal/keys"
 	"github.com/t0mer/skryol/internal/metrics"
+	"github.com/t0mer/skryol/internal/scanner"
 	"github.com/t0mer/skryol/internal/shodan"
 	"github.com/t0mer/skryol/internal/web"
 )
@@ -29,6 +30,7 @@ type Deps struct {
 	Keys    *keys.Service
 	Shodan  *shodan.Client
 	Cipher  *crypto.Cipher
+	Scanner *scanner.Scanner
 }
 
 // Server holds handler dependencies.
@@ -69,7 +71,12 @@ func (s *Server) Router() (http.Handler, error) {
 			r.Get("/{id}", s.handleGetAsset)
 			r.Put("/{id}", s.handleUpdateAsset)
 			r.Delete("/{id}", s.handleDeleteAsset)
+			r.Post("/{id}/scan", s.handleScanAsset)
+			r.Get("/{id}/scans", s.handleListAssetScans)
 		})
+
+		r.Post("/scan", s.handleScanAll)
+		r.Get("/scans/{id}", s.handleGetScan)
 
 		r.Route("/shodan/keys", func(r chi.Router) {
 			r.Get("/", s.handleListKeys)
