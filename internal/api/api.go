@@ -11,6 +11,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
+	"github.com/t0mer/skryol/internal/auth"
 	"github.com/t0mer/skryol/internal/channels"
 	"github.com/t0mer/skryol/internal/config"
 	"github.com/t0mer/skryol/internal/crypto"
@@ -33,6 +34,7 @@ type Deps struct {
 	Cipher   *crypto.Cipher
 	Scanner  *scanner.Scanner
 	Channels *channels.Service
+	Auth     *auth.Service
 }
 
 // Server holds handler dependencies.
@@ -61,57 +63,77 @@ func (s *Server) Router() (http.Handler, error) {
 
 	// Operational endpoints.
 	r.Get("/healthz", s.handleHealth)
-	r.Handle("/metrics", promhttp.HandlerFor(s.Metrics.Registry, promhttp.HandlerOpts{}))
+	metricsHandler := promhttp.HandlerFor(s.Metrics.Registry, promhttp.HandlerOpts{})
+	if s.Auth != nil && s.Auth.Enabled() && s.Auth.GuardMetrics() {
+		r.With(s.requireAuth).Handle("/metrics", metricsHandler)
+	} else {
+		r.Handle("/metrics", metricsHandler)
+	}
 
 	// Versioned JSON API.
 	r.Route("/api/v1", func(r chi.Router) {
+		// Public endpoints (reachable without authentication).
 		r.Get("/health", s.handleHealth)
+		r.Post("/auth/login", s.handleLogin)
+		r.Post("/auth/logout", s.handleLogout)
+		r.Get("/auth/me", s.handleAuthMe)
 
-		r.Route("/assets", func(r chi.Router) {
-			r.Get("/", s.handleListAssets)
-			r.Post("/", s.handleCreateAsset)
-			r.Get("/{id}", s.handleGetAsset)
-			r.Put("/{id}", s.handleUpdateAsset)
-			r.Delete("/{id}", s.handleDeleteAsset)
-			r.Post("/{id}/scan", s.handleScanAsset)
-			r.Get("/{id}/scans", s.handleListAssetScans)
-			r.Get("/{id}/diff", s.handleAssetDiff)
-			r.Get("/{id}/score-history", s.handleScoreHistory)
+		// Protected endpoints.
+		r.Group(func(r chi.Router) {
+			r.Use(s.requireAuth)
+
+			r.Route("/assets", func(r chi.Router) {
+				r.Get("/", s.handleListAssets)
+				r.Post("/", s.handleCreateAsset)
+				r.Get("/{id}", s.handleGetAsset)
+				r.Put("/{id}", s.handleUpdateAsset)
+				r.Delete("/{id}", s.handleDeleteAsset)
+				r.Post("/{id}/scan", s.handleScanAsset)
+				r.Get("/{id}/scans", s.handleListAssetScans)
+				r.Get("/{id}/diff", s.handleAssetDiff)
+				r.Get("/{id}/score-history", s.handleScoreHistory)
+			})
+
+			r.Post("/scan", s.handleScanAll)
+			r.Get("/scans/{id}", s.handleGetScan)
+
+			r.Route("/shodan/keys", func(r chi.Router) {
+				r.Get("/", s.handleListKeys)
+				r.Post("/", s.handleCreateKey)
+				r.Put("/{id}", s.handleUpdateKey)
+				r.Delete("/{id}", s.handleDeleteKey)
+				r.Post("/{id}/refresh", s.handleRefreshKey)
+			})
+
+			r.Route("/channels", func(r chi.Router) {
+				r.Get("/", s.handleListChannels)
+				r.Post("/", s.handleCreateChannel)
+				r.Post("/test", s.handleTestChannel)
+				r.Put("/{id}", s.handleUpdateChannel)
+				r.Delete("/{id}", s.handleDeleteChannel)
+				r.Post("/{id}/test", s.handleTestChannel)
+			})
+
+			r.Route("/rules", func(r chi.Router) {
+				r.Get("/", s.handleListRules)
+				r.Post("/", s.handleCreateRule)
+				r.Get("/{id}", s.handleGetRule)
+				r.Put("/{id}", s.handleUpdateRule)
+				r.Delete("/{id}", s.handleDeleteRule)
+			})
+
+			r.Get("/alerts/events", s.handleListAlertEvents)
+
+			r.Get("/dashboard", s.handleDashboard)
+			r.Get("/settings", s.handleGetSettings)
+			r.Put("/settings", s.handleUpdateSettings)
+
+			r.Route("/auth/tokens", func(r chi.Router) {
+				r.Get("/", s.handleListTokens)
+				r.Post("/", s.handleCreateToken)
+				r.Delete("/{id}", s.handleDeleteToken)
+			})
 		})
-
-		r.Post("/scan", s.handleScanAll)
-		r.Get("/scans/{id}", s.handleGetScan)
-
-		r.Route("/shodan/keys", func(r chi.Router) {
-			r.Get("/", s.handleListKeys)
-			r.Post("/", s.handleCreateKey)
-			r.Put("/{id}", s.handleUpdateKey)
-			r.Delete("/{id}", s.handleDeleteKey)
-			r.Post("/{id}/refresh", s.handleRefreshKey)
-		})
-
-		r.Route("/channels", func(r chi.Router) {
-			r.Get("/", s.handleListChannels)
-			r.Post("/", s.handleCreateChannel)
-			r.Post("/test", s.handleTestChannel)
-			r.Put("/{id}", s.handleUpdateChannel)
-			r.Delete("/{id}", s.handleDeleteChannel)
-			r.Post("/{id}/test", s.handleTestChannel)
-		})
-
-		r.Route("/rules", func(r chi.Router) {
-			r.Get("/", s.handleListRules)
-			r.Post("/", s.handleCreateRule)
-			r.Get("/{id}", s.handleGetRule)
-			r.Put("/{id}", s.handleUpdateRule)
-			r.Delete("/{id}", s.handleDeleteRule)
-		})
-
-		r.Get("/alerts/events", s.handleListAlertEvents)
-
-		r.Get("/dashboard", s.handleDashboard)
-		r.Get("/settings", s.handleGetSettings)
-		r.Put("/settings", s.handleUpdateSettings)
 	})
 
 	// Embedded SPA with client-routing fallback.
