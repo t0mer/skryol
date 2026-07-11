@@ -28,8 +28,9 @@ func Handler() (http.Handler, error) {
 		if upath == "" {
 			upath = "index.html"
 		}
-		if _, err := fs.Stat(sub, upath); err != nil {
-			// Not a real file: serve the SPA entrypoint for client routing.
+		if info, err := fs.Stat(sub, upath); err != nil || info.IsDir() {
+			// Not a real file (or a directory): serve the SPA entrypoint so
+			// client-side routing handles paths like /assets or /settings.
 			r2 := r.Clone(r.Context())
 			r2.URL.Path = "/"
 			fileServer.ServeHTTP(w, r2)

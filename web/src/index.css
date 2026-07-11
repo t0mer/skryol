@@ -1,0 +1,82 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-canvas text-ink font-sans antialiased;
+    /* Faint scanning grid — the observatory backdrop. */
+    background-image:
+      radial-gradient(1200px 600px at 80% -10%, rgba(47, 212, 187, 0.06), transparent 60%),
+      linear-gradient(to bottom, rgba(255, 255, 255, 0.015) 1px, transparent 1px),
+      linear-gradient(to right, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
+    background-size: auto, 100% 44px, 44px 100%;
+  }
+  ::selection {
+    background: rgba(47, 212, 187, 0.25);
+  }
+  /* Scrollbar */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: #2a3949 transparent;
+  }
+  *::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  *::-webkit-scrollbar-thumb {
+    background: #223041;
+    border-radius: 999px;
+  }
+  *:focus-visible {
+    outline: 2px solid rgba(47, 212, 187, 0.7);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .panel {
+    @apply rounded-xl border border-line bg-panel shadow-panel;
+  }
+  .eyebrow {
+    @apply font-mono text-[11px] uppercase tracking-[0.2em] text-faint;
+  }
+  .metric {
+    @apply font-mono tabular-nums;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-line-2 bg-panel-2 px-3.5 py-2 text-sm font-medium text-ink transition-colors hover:border-signal-dim hover:text-white disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-transparent bg-signal text-canvas hover:bg-signal-glow hover:text-canvas;
+  }
+  .btn-ghost {
+    @apply border-transparent bg-transparent px-2.5 text-muted hover:bg-panel-2 hover:text-ink;
+  }
+  .btn-danger {
+    @apply border-transparent bg-crit/15 text-crit hover:bg-crit/25;
+  }
+  .input {
+    @apply w-full rounded-lg border border-line-2 bg-canvas/60 px-3 py-2 text-sm text-ink placeholder:text-faint focus:border-signal-dim focus:outline-none;
+  }
+  .label {
+    @apply mb-1.5 block text-xs font-medium text-muted;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 rounded-md px-2 py-0.5 font-mono text-xs;
+  }
+  .th {
+    @apply px-4 py-2.5 text-left text-[11px] font-semibold uppercase tracking-wider text-faint;
+  }
+  .td {
+    @apply px-4 py-3 text-sm;
+  }
+}

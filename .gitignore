@@ -36,7 +36,6 @@ docs/*
 /web/dist/
 /internal/web/dist/*
 !/internal/web/dist/.gitkeep
-!/internal/web/dist/index.html
 web/.vite/
 *.log
 npm-debug.log*
