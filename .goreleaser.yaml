@@ -1,0 +1,59 @@
+version: 2
+
+project_name: skryol
+
+before:
+  hooks:
+    # Build and embed the frontend before the Go build picks up internal/web/dist.
+    - sh -c "cd web && npm ci && npm run build"
+    - go mod tidy
+
+builds:
+  - id: skryol
+    main: ./cmd/skryol
+    binary: skryol
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/t0mer/skryol/internal/version.Version={{ .Version }}
+    goos:
+      - linux
+    goarch:
+      - amd64
+      - arm64
+      - arm
+    goarm:
+      - "7"
+    ignore:
+      - goos: linux
+        goarch: arm
+        goarm: "6"
+
+archives:
+  - id: skryol
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+
+checksum:
+  name_template: "checksums.txt"
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-snapshot"
+
+changelog:
+  use: github
+  sort: asc
+  filters:
+    exclude:
+      - "^docs:"
+      - "^test:"
+      - "^chore:"
+
+release:
+  github:
+    owner: t0mer
+    name: skryol
+  draft: false
+  prerelease: auto
