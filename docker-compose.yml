@@ -1,0 +1,21 @@
+services:
+  skryol:
+    image: techblog/skryol:latest
+    ports:
+      - "8080:8080"
+    volumes:
+      # Named volume inherits the image's /data ownership (non-root user).
+      # Holds the SQLite DB, screenshots, and encrypted secrets — persist it.
+      - skryol-data:/data
+    environment:
+      # 32-byte key (hex or base64). Encrypts Shodan keys and channel creds at
+      # rest. Generate once and keep it stable: `openssl rand -hex 32`.
+      SKRYOL_CRYPTO_ENCRYPTION_KEY: "replace-with-a-32-byte-hex-or-base64-key"
+      LOG_LEVEL: info
+      # Uncomment to require authentication:
+      # SKRYOL_AUTH_ENABLED: "true"
+      # SKRYOL_AUTH_PASSWORD: "change-me-on-first-run"
+    restart: unless-stopped
+
+volumes:
+  skryol-data:
