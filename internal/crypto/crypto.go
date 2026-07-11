@@ -52,6 +52,25 @@ func New(rawKey string) (*Cipher, error) {
 	return &Cipher{aead: aead, key: key}, nil
 }
 
+// NewFromRawKey builds a Cipher from exactly 32 raw key bytes (e.g. a
+// passphrase-derived key). Used by export/import for portable re-encryption.
+func NewFromRawKey(key []byte) (*Cipher, error) {
+	if len(key) != 32 {
+		return nil, fmt.Errorf("crypto: raw key must be 32 bytes, got %d", len(key))
+	}
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, fmt.Errorf("crypto: building cipher: %w", err)
+	}
+	aead, err := cipher.NewGCM(block)
+	if err != nil {
+		return nil, fmt.Errorf("crypto: building GCM: %w", err)
+	}
+	dup := make([]byte, len(key))
+	copy(dup, key)
+	return &Cipher{aead: aead, key: dup}, nil
+}
+
 // decodeKey parses a 32-byte key from hex or base64.
 func decodeKey(s string) ([]byte, error) {
 	if len(s) == 64 {
