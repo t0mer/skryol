@@ -108,6 +108,10 @@ func (s *Server) Router() (http.Handler, error) {
 		})
 
 		r.Get("/alerts/events", s.handleListAlertEvents)
+
+		r.Get("/dashboard", s.handleDashboard)
+		r.Get("/settings", s.handleGetSettings)
+		r.Put("/settings", s.handleUpdateSettings)
 	})
 
 	// Embedded SPA with client-routing fallback.

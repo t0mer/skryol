@@ -24,6 +24,7 @@ import (
 	"github.com/t0mer/skryol/internal/metrics"
 	"github.com/t0mer/skryol/internal/processor"
 	"github.com/t0mer/skryol/internal/scanner"
+	"github.com/t0mer/skryol/internal/scoring"
 	"github.com/t0mer/skryol/internal/shodan"
 	"github.com/t0mer/skryol/internal/version"
 )
@@ -97,7 +98,9 @@ func run() error {
 	alertEngine := alerts.New(database, channelService, m, log, cfg.Server.BaseURL)
 
 	scanEngine := scanner.New(database, shodanClient, keyService, m, log, cfg.Scanner)
-	proc := processor.New(database, m, log, nil)
+	proc := processor.New(database, m, log, func(ctx context.Context) scoring.Weights {
+		return database.GetScoringWeights(ctx)
+	})
 	proc.SetAlertEvaluator(alertEngine)
 	scanEngine.SetProcessor(proc)
 	if err := scanEngine.Start(); err != nil {
