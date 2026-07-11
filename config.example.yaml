@@ -51,7 +51,14 @@ scanner:
 
 auth:
   enabled: false
-  # Random secret for signing session cookies (required when auth.enabled).
+  # Admin username for the single-account login.
+  username: "admin"
+  # Bootstrap password, used ONLY on first run to create the admin account.
+  # Prefer the env var SKRYOL_AUTH_PASSWORD. If blank, a random password is
+  # generated and logged once; reset it later with `skryol --reset-password`.
+  password: ""
+  # Random secret for signing session cookies. If blank, an ephemeral secret is
+  # generated at startup (sessions reset on restart).
   session_secret: ""
   # Require auth for /metrics too (default: metrics open for scraping).
   guard_metrics: false

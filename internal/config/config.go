@@ -76,6 +76,8 @@ type ScannerConfig struct {
 // AuthConfig toggles and configures optional UI/API authentication.
 type AuthConfig struct {
 	Enabled       bool   `mapstructure:"enabled"`
+	Username      string `mapstructure:"username"`
+	Password      string `mapstructure:"password"` // bootstrap password, first run only
 	SessionSecret string `mapstructure:"session_secret"`
 	GuardMetrics  bool   `mapstructure:"guard_metrics"`
 }
@@ -157,6 +159,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("scanner.rescan_timeout_seconds", 300)
 
 	v.SetDefault("auth.enabled", false)
+	v.SetDefault("auth.username", "admin")
+	v.SetDefault("auth.password", "")
 	v.SetDefault("auth.session_secret", "")
 	v.SetDefault("auth.guard_metrics", false)
 }
