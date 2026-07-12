@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -43,11 +44,16 @@ func WriteEditable(path string, values map[string]any) error {
 		setPath(root, splitKey(k), values[k])
 	}
 
-	out, err := yaml.Marshal(root)
-	if err != nil {
+	var buf bytes.Buffer
+	enc := yaml.NewEncoder(&buf)
+	enc.SetIndent(2) // match config.example.yaml's 2-space style
+	if err := enc.Encode(root); err != nil {
 		return fmt.Errorf("marshalling config: %w", err)
 	}
-	return atomicWrite(path, out)
+	if err := enc.Close(); err != nil {
+		return fmt.Errorf("marshalling config: %w", err)
+	}
+	return atomicWrite(path, buf.Bytes())
 }
 
 // loadDocument reads path into a mapping node, or returns an empty mapping when
