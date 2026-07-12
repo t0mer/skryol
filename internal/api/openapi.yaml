@@ -192,8 +192,45 @@ paths:
     get: { tags: [Alerts], summary: Recent alert firings (audit log), responses: { "200": { description: Events } } }
 
   /settings:
-    get: { tags: [Settings], summary: Get settings, responses: { "200": { description: Settings } } }
-    put: { tags: [Settings], summary: Update scoring weights, responses: { "200": { description: Settings } } }
+    get:
+      tags: [Settings]
+      summary: Get runtime settings
+      description: >
+        Returns editable configuration values (keyed by canonical dotted key),
+        precedence locks (keys pinned by an env var or flag, shown read-only),
+        pending restart-required changes (saved to YAML but not yet live), the
+        scoring weights, and read-only instance metadata.
+      responses: { "200": { description: Settings } }
+    put:
+      tags: [Settings]
+      summary: Update runtime settings
+      description: >
+        Persists edited settings to the YAML bootstrap file and applies them:
+        hot where safe (log level, scan schedule/guardrails, auth toggle,
+        password), or recorded as pending-restart (listen port/address, base
+        URL, CORS, log format, Shodan client tunables). Env/flag-locked keys are
+        rejected. Secrets (encryption key, session secret) are never written to
+        YAML; the admin password is stored hashed only. Any subset of the body
+        may be present.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                values:
+                  type: object
+                  additionalProperties: true
+                  description: Map of canonical dotted key to new value.
+                password:
+                  type: string
+                  description: New admin password (min 8 chars); stored hashed, never in YAML.
+                scoring_weights:
+                  type: object
+                  description: Optional scoring weight table (DB-backed).
+      responses:
+        "200": { description: Settings }
+        "400": { description: Validation error or attempt to edit a locked key }
 
   /auth/login:
     post:
