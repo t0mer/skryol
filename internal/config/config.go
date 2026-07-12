@@ -24,6 +24,10 @@ type Config struct {
 	Scanner  ScannerConfig  `mapstructure:"scanner"`
 	Auth     AuthConfig     `mapstructure:"auth"`
 	Data     DataConfig     `mapstructure:"data"`
+
+	// Source records the config file path and precedence locks. It is populated
+	// by Load and ignored by the YAML/env unmarshaller.
+	Source *Source `mapstructure:"-"`
 }
 
 // ServerConfig controls the HTTP listener.
@@ -100,15 +104,20 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 	}
 
 	// Config file path: flag --config, else env, else conventional locations.
+	// explicitPath is the operator-chosen path (used even if it does not exist
+	// yet, so the settings layer knows where to persist edits).
+	var explicitPath string
 	if flags != nil {
 		if cf, _ := flags.GetString("config"); cf != "" {
-			v.SetConfigFile(cf)
+			explicitPath = cf
 		}
 	}
-	if v.ConfigFileUsed() == "" && v.GetString("config") != "" {
-		v.SetConfigFile(v.GetString("config"))
+	if explicitPath == "" && v.GetString("config") != "" {
+		explicitPath = v.GetString("config")
 	}
-	if v.ConfigFileUsed() == "" {
+	if explicitPath != "" {
+		v.SetConfigFile(explicitPath)
+	} else {
 		v.SetConfigName("config")
 		v.SetConfigType("yaml")
 		v.AddConfigPath(".")
@@ -130,6 +139,18 @@ func Load(flags *pflag.FlagSet) (*Config, error) {
 		return nil, fmt.Errorf("unmarshalling config: %w", err)
 	}
 	cfg.normalize()
+
+	// Resolve the file the settings layer writes back to: the one viper read,
+	// else the explicit path (even if absent), else a default in the working
+	// directory. Precedence locks are captured from flags and the environment.
+	fileUsed := v.ConfigFileUsed()
+	if fileUsed == "" {
+		fileUsed = explicitPath
+	}
+	if fileUsed == "" {
+		fileUsed = "config.yaml"
+	}
+	cfg.Source = detectSource(flags, fileUsed)
 	return &cfg, nil
 }
 
