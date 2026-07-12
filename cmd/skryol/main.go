@@ -28,6 +28,7 @@ import (
 	"github.com/t0mer/skryol/internal/processor"
 	"github.com/t0mer/skryol/internal/scanner"
 	"github.com/t0mer/skryol/internal/scoring"
+	"github.com/t0mer/skryol/internal/settings"
 	"github.com/t0mer/skryol/internal/shodan"
 	"github.com/t0mer/skryol/internal/version"
 )
@@ -156,6 +157,8 @@ func run() error {
 	}
 	defer scanEngine.Stop()
 
+	settingsService := settings.New(cfg, log, scanEngine, authService)
+
 	server := api.NewServer(api.Deps{
 		Config:   cfg,
 		DB:       database,
@@ -168,6 +171,7 @@ func run() error {
 		Channels: channelService,
 		Auth:     authService,
 		Backup:   backupService,
+		Settings: settingsService,
 	})
 	router, err := server.Router()
 	if err != nil {

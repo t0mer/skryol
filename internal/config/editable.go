@@ -21,6 +21,17 @@ const (
 	ApplyRestart
 )
 
+// Kind is the value type of an editable key, used to coerce JSON input and to
+// emit correctly-typed YAML scalars.
+type Kind int
+
+const (
+	KindString Kind = iota
+	KindInt
+	KindFloat
+	KindBool
+)
+
 // EditableKey describes one runtime-editable configuration key.
 type EditableKey struct {
 	// Key is the canonical dotted path (e.g. "server.port"). Its segments are
@@ -30,33 +41,38 @@ type EditableKey struct {
 	Flag string
 	// Apply is how a change reaches the running process.
 	Apply ApplyClass
+	// Kind is the value type.
+	Kind Kind
 }
 
 // EditableKeys is the authoritative registry of runtime-editable keys.
 var EditableKeys = []EditableKey{
-	{Key: "server.port", Flag: "server.port", Apply: ApplyRestart},
-	{Key: "server.address", Flag: "server.address", Apply: ApplyRestart},
-	{Key: "server.base_url", Flag: "", Apply: ApplyRestart},
-	{Key: "server.enable_cors", Flag: "", Apply: ApplyRestart},
+	{Key: "server.port", Flag: "server.port", Apply: ApplyRestart, Kind: KindInt},
+	{Key: "server.address", Flag: "server.address", Apply: ApplyRestart, Kind: KindString},
+	{Key: "server.base_url", Flag: "", Apply: ApplyRestart, Kind: KindString},
+	{Key: "server.enable_cors", Flag: "", Apply: ApplyRestart, Kind: KindBool},
 
-	{Key: "log.level", Flag: "log.level", Apply: ApplyHot},
-	{Key: "log.format", Flag: "log.format", Apply: ApplyRestart},
+	{Key: "log.level", Flag: "log.level", Apply: ApplyHot, Kind: KindString},
+	{Key: "log.format", Flag: "log.format", Apply: ApplyRestart, Kind: KindString},
 
-	{Key: "scanner.schedule", Flag: "scanner.schedule", Apply: ApplyHot},
-	{Key: "scanner.max_hosts_per_asset", Flag: "", Apply: ApplyHot},
-	{Key: "scanner.max_concurrency", Flag: "", Apply: ApplyHot},
-	{Key: "scanner.retention_days", Flag: "", Apply: ApplyHot},
-	{Key: "scanner.rescan_timeout_seconds", Flag: "", Apply: ApplyHot},
+	{Key: "scanner.schedule", Flag: "scanner.schedule", Apply: ApplyHot, Kind: KindString},
+	{Key: "scanner.max_hosts_per_asset", Flag: "", Apply: ApplyHot, Kind: KindInt},
+	{Key: "scanner.max_concurrency", Flag: "", Apply: ApplyHot, Kind: KindInt},
+	{Key: "scanner.retention_days", Flag: "", Apply: ApplyHot, Kind: KindInt},
+	{Key: "scanner.rescan_timeout_seconds", Flag: "", Apply: ApplyHot, Kind: KindInt},
 
-	{Key: "shodan.base_url", Flag: "", Apply: ApplyRestart},
-	{Key: "shodan.requests_per_second", Flag: "", Apply: ApplyRestart},
-	{Key: "shodan.max_retries", Flag: "", Apply: ApplyRestart},
-	{Key: "shodan.timeout_seconds", Flag: "", Apply: ApplyRestart},
+	{Key: "shodan.base_url", Flag: "", Apply: ApplyRestart, Kind: KindString},
+	{Key: "shodan.requests_per_second", Flag: "", Apply: ApplyRestart, Kind: KindFloat},
+	{Key: "shodan.max_retries", Flag: "", Apply: ApplyRestart, Kind: KindInt},
+	{Key: "shodan.timeout_seconds", Flag: "", Apply: ApplyRestart, Kind: KindInt},
 
-	{Key: "auth.enabled", Flag: "auth.enabled", Apply: ApplyHot},
-	{Key: "auth.username", Flag: "", Apply: ApplyHot},
-	{Key: "auth.guard_metrics", Flag: "", Apply: ApplyHot},
+	{Key: "auth.enabled", Flag: "auth.enabled", Apply: ApplyHot, Kind: KindBool},
+	{Key: "auth.username", Flag: "", Apply: ApplyHot, Kind: KindString},
+	{Key: "auth.guard_metrics", Flag: "", Apply: ApplyHot, Kind: KindBool},
 }
+
+// EditableKeyFor returns the registry entry for a dotted key.
+func EditableKeyFor(key string) (EditableKey, bool) { return editableKey(key) }
 
 // EnvName maps a canonical dotted key to its SKRYOL_ environment-variable name:
 // upper-case the key and replace "." with "_". For example server.port becomes

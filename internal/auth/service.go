@@ -134,6 +134,15 @@ func (s *Service) Bootstrap(ctx context.Context) error {
 	return nil
 }
 
+// HasUser reports whether an admin account already exists.
+func (s *Service) HasUser(ctx context.Context) (bool, error) {
+	n, err := s.db.CountUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
 // SetPassword sets the password for the admin user (used by --reset-password and
 // the settings API). It always writes to the current admin username.
 func (s *Service) SetPassword(ctx context.Context, password string) error {
