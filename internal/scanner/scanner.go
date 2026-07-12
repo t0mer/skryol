@@ -36,11 +36,16 @@ type Scanner struct {
 	keys    *keys.Service
 	log     *slog.Logger
 	metrics *metrics.Metrics
-	cfg     config.ScannerConfig
+
+	cfgMu sync.RWMutex // guards cfg (live-reconfigurable)
+	cfg   config.ScannerConfig
 
 	processor Processor
-	cron      *cron.Cron
-	batchMu   sync.Mutex // serializes batch runs
+
+	cronMu sync.Mutex // guards cron
+	cron   *cron.Cron
+
+	batchMu sync.Mutex // serializes batch runs
 }
 
 // New builds a Scanner.
@@ -51,10 +56,22 @@ func New(database *db.DB, client *shodan.Client, keySvc *keys.Service, m *metric
 // SetProcessor installs the post-scan processor.
 func (s *Scanner) SetProcessor(p Processor) { s.processor = p }
 
+// config returns a snapshot of the current scanner configuration.
+func (s *Scanner) config() config.ScannerConfig {
+	s.cfgMu.RLock()
+	defer s.cfgMu.RUnlock()
+	return s.cfg
+}
+
 // Start schedules the daily batch. It does not block.
 func (s *Scanner) Start() error {
+	return s.buildCron(s.config().Schedule)
+}
+
+// buildCron replaces the running cron with a fresh one bound to schedule.
+func (s *Scanner) buildCron(schedule string) error {
 	c := cron.New()
-	_, err := c.AddFunc(s.cfg.Schedule, func() {
+	_, err := c.AddFunc(schedule, func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 6*time.Hour)
 		defer cancel()
 		if _, err := s.ScanAll(ctx); err != nil {
@@ -62,18 +79,57 @@ func (s *Scanner) Start() error {
 		}
 	})
 	if err != nil {
-		return fmt.Errorf("scheduling scan (%q): %w", s.cfg.Schedule, err)
+		return fmt.Errorf("scheduling scan (%q): %w", schedule, err)
 	}
-	s.cron = c
 	c.Start()
-	s.log.Info("scan scheduler started", "schedule", s.cfg.Schedule)
+
+	s.cronMu.Lock()
+	old := s.cron
+	s.cron = c
+	s.cronMu.Unlock()
+	if old != nil {
+		old.Stop()
+	}
+	s.log.Info("scan scheduler started", "schedule", schedule)
+	return nil
+}
+
+// Reconfigure applies new scanner settings to the running process: guardrails
+// take effect on the next scan, and the cron is rebuilt when the schedule
+// changes. An invalid cron expression is rejected and the previous schedule and
+// its running cron are left untouched.
+func (s *Scanner) Reconfigure(cfg config.ScannerConfig) error {
+	old := s.config()
+	if cfg.Schedule != old.Schedule {
+		// Validate before committing so a bad expression can't stop scans.
+		if _, err := cron.ParseStandard(cfg.Schedule); err != nil {
+			return fmt.Errorf("invalid schedule %q: %w", cfg.Schedule, err)
+		}
+	}
+
+	s.cfgMu.Lock()
+	s.cfg = cfg
+	s.cfgMu.Unlock()
+
+	if cfg.Schedule != old.Schedule {
+		if err := s.buildCron(cfg.Schedule); err != nil {
+			// Roll back to the previous known-good schedule.
+			s.cfgMu.Lock()
+			s.cfg.Schedule = old.Schedule
+			s.cfgMu.Unlock()
+			return err
+		}
+	}
 	return nil
 }
 
 // Stop halts the scheduler.
 func (s *Scanner) Stop() {
-	if s.cron != nil {
-		s.cron.Stop()
+	s.cronMu.Lock()
+	c := s.cron
+	s.cronMu.Unlock()
+	if c != nil {
+		c.Stop()
 	}
 }
 
@@ -106,7 +162,8 @@ func (s *Scanner) ScanAll(ctx context.Context) (*BatchResult, error) {
 	result := &BatchResult{Total: len(assets)}
 	var mu sync.Mutex
 
-	conc := s.cfg.MaxConcurrency
+	cfg := s.config()
+	conc := cfg.MaxConcurrency
 	if conc < 1 {
 		conc = 1
 	}
@@ -141,7 +198,7 @@ func (s *Scanner) ScanAll(ctx context.Context) (*BatchResult, error) {
 	wg.Wait()
 
 	s.keys.PersistPoolState(ctx)
-	if n, err := s.db.PruneRawScans(ctx, s.cfg.RetentionDays); err != nil {
+	if n, err := s.db.PruneRawScans(ctx, cfg.RetentionDays); err != nil {
 		s.log.Warn("pruning raw scans failed", "err", err)
 	} else if n > 0 {
 		s.log.Info("pruned raw scan reports", "count", n)
@@ -259,7 +316,7 @@ func (s *Scanner) maybeRescan(ctx context.Context, ips []string) {
 		s.log.Warn("on-demand rescan submit failed", "err", err)
 		return
 	}
-	deadline := time.Now().Add(time.Duration(s.cfg.RescanTimeoutSec) * time.Second)
+	deadline := time.Now().Add(time.Duration(s.config().RescanTimeoutSec) * time.Second)
 	for time.Now().Before(deadline) {
 		st, err := s.client.ScanStatus(ctx, sub.ID)
 		if err != nil {

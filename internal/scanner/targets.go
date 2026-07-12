@@ -20,7 +20,7 @@ func (s *Scanner) resolveTargets(ctx context.Context, a models.Asset) ([]string,
 		return []string{a.Value}, nil
 
 	case models.AssetCIDR:
-		return expandCIDR(a.Value, s.cfg.MaxHostsPerAsset)
+		return expandCIDR(a.Value, s.config().MaxHostsPerAsset)
 
 	case models.AssetFQDN:
 		res, err := s.client.ResolveDNS(ctx, []string{a.Value})
@@ -31,7 +31,7 @@ func (s *Scanner) resolveTargets(ctx context.Context, a models.Asset) ([]string,
 		if len(ips) == 0 {
 			return nil, fmt.Errorf("hostname %s did not resolve to any IP", a.Value)
 		}
-		return capHosts(ips, s.cfg.MaxHostsPerAsset)
+		return capHosts(ips, s.config().MaxHostsPerAsset)
 
 	case models.AssetDomain:
 		return s.resolveDomain(ctx, a.Value)
@@ -72,8 +72,8 @@ func (s *Scanner) resolveDomain(ctx context.Context, domain string) ([]string, e
 
 	// Resolve any hostnames we don't yet have an IP for (bounded batch).
 	hostnames = dedupeStrings(hostnames)
-	if len(hostnames) > s.cfg.MaxHostsPerAsset {
-		hostnames = hostnames[:s.cfg.MaxHostsPerAsset]
+	if len(hostnames) > s.config().MaxHostsPerAsset {
+		hostnames = hostnames[:s.config().MaxHostsPerAsset]
 	}
 	if len(hostnames) > 0 {
 		res, err := s.client.ResolveDNS(ctx, hostnames)
@@ -94,7 +94,7 @@ func (s *Scanner) resolveDomain(ctx context.Context, domain string) ([]string, e
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("domain %s yielded no resolvable IPs", domain)
 	}
-	return capHosts(ips, s.cfg.MaxHostsPerAsset)
+	return capHosts(ips, s.config().MaxHostsPerAsset)
 }
 
 // expandCIDR lists the member addresses of a prefix, rejecting ranges larger
