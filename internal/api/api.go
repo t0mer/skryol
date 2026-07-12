@@ -20,6 +20,7 @@ import (
 	"github.com/t0mer/skryol/internal/keys"
 	"github.com/t0mer/skryol/internal/metrics"
 	"github.com/t0mer/skryol/internal/scanner"
+	"github.com/t0mer/skryol/internal/settings"
 	"github.com/t0mer/skryol/internal/shodan"
 	"github.com/t0mer/skryol/internal/web"
 )
@@ -37,6 +38,7 @@ type Deps struct {
 	Channels *channels.Service
 	Auth     *auth.Service
 	Backup   *backup.Service
+	Settings *settings.Service
 }
 
 // Server holds handler dependencies.
@@ -72,13 +74,10 @@ func (s *Server) Router() (http.Handler, error) {
 
 	// /metrics carries asset identifiers and scores in its labels. When auth is
 	// enabled it is guarded by default (auth.guard_metrics); operators scraping
-	// over a trusted network can opt out to keep it open.
+	// over a trusted network can opt out to keep it open. The guard is evaluated
+	// per request so runtime auth/guard changes take effect without a restart.
 	metricsHandler := promhttp.HandlerFor(s.Metrics.Registry, promhttp.HandlerOpts{})
-	if s.Auth != nil && s.Auth.Enabled() && s.Auth.GuardMetrics() {
-		r.With(s.requireAuth).Handle("/metrics", metricsHandler)
-	} else {
-		r.Handle("/metrics", metricsHandler)
-	}
+	r.Handle("/metrics", s.guardMetrics(metricsHandler))
 
 	// Versioned JSON API.
 	r.Route("/api/v1", func(r chi.Router) {

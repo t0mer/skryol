@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"github.com/t0mer/skryol/internal/db"
 )
@@ -30,9 +31,11 @@ type Config struct {
 // Service implements optional authentication.
 type Service struct {
 	db     *db.DB
-	cfg    Config
 	signer *sessionSigner
 	log    *slog.Logger
+
+	mu  sync.RWMutex // guards the runtime-mutable parts of cfg
+	cfg Config
 }
 
 // NewService builds the auth service.
@@ -44,15 +47,59 @@ func NewService(database *db.DB, cfg Config, log *slog.Logger) *Service {
 }
 
 // Enabled reports whether authentication is required.
-func (s *Service) Enabled() bool { return s.cfg.Enabled }
+func (s *Service) Enabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.Enabled
+}
 
 // GuardMetrics reports whether /metrics requires auth.
-func (s *Service) GuardMetrics() bool { return s.cfg.GuardMetrics }
+func (s *Service) GuardMetrics() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.GuardMetrics
+}
+
+// Username returns the configured admin username.
+func (s *Service) Username() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.Username
+}
+
+// SetRuntimeConfig applies auth settings changed at runtime. When auth
+// transitions to enabled it re-runs Bootstrap so an admin account exists. It
+// returns whether auth is enabled after the change so callers can guard against
+// enabling auth with no usable account.
+func (s *Service) SetRuntimeConfig(ctx context.Context, enabled bool, username string, guardMetrics bool) error {
+	if username == "" {
+		username = "admin"
+	}
+	s.mu.Lock()
+	wasEnabled := s.cfg.Enabled
+	s.cfg.Enabled = enabled
+	s.cfg.Username = username
+	s.cfg.GuardMetrics = guardMetrics
+	s.mu.Unlock()
+
+	if enabled && !wasEnabled {
+		if err := s.Bootstrap(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 
 // Bootstrap ensures an admin account exists when auth is enabled. It uses the
 // configured bootstrap password, or generates and logs a random one.
 func (s *Service) Bootstrap(ctx context.Context) error {
-	if !s.cfg.Enabled {
+	s.mu.RLock()
+	enabled := s.cfg.Enabled
+	username := s.cfg.Username
+	password := s.cfg.Password
+	s.mu.RUnlock()
+
+	if !enabled {
 		return nil
 	}
 	n, err := s.db.CountUsers(ctx)
@@ -62,7 +109,6 @@ func (s *Service) Bootstrap(ctx context.Context) error {
 	if n > 0 {
 		return nil
 	}
-	password := s.cfg.Password
 	generated := false
 	if password == "" {
 		buf := make([]byte, 12)
@@ -76,25 +122,35 @@ func (s *Service) Bootstrap(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if err := s.db.UpsertUser(ctx, s.cfg.Username, hash); err != nil {
+	if err := s.db.UpsertUser(ctx, username, hash); err != nil {
 		return err
 	}
 	if generated {
 		s.log.Warn("created initial admin account with a generated password — change it via --reset-password",
-			"username", s.cfg.Username, "password", password)
+			"username", username, "password", password)
 	} else {
-		s.log.Info("created initial admin account", "username", s.cfg.Username)
+		s.log.Info("created initial admin account", "username", username)
 	}
 	return nil
 }
 
-// SetPassword sets the password for the admin user (used by --reset-password).
+// HasUser reports whether an admin account already exists.
+func (s *Service) HasUser(ctx context.Context) (bool, error) {
+	n, err := s.db.CountUsers(ctx)
+	if err != nil {
+		return false, err
+	}
+	return n > 0, nil
+}
+
+// SetPassword sets the password for the admin user (used by --reset-password and
+// the settings API). It always writes to the current admin username.
 func (s *Service) SetPassword(ctx context.Context, password string) error {
 	hash, err := HashPassword(password)
 	if err != nil {
 		return err
 	}
-	return s.db.UpsertUser(ctx, s.cfg.Username, hash)
+	return s.db.UpsertUser(ctx, s.Username(), hash)
 }
 
 // Login verifies credentials and returns a signed session token.
@@ -112,7 +168,7 @@ func (s *Service) Login(ctx context.Context, username, password string) (string,
 // Authenticate reports whether the request carries a valid session cookie or a
 // valid bearer/API token. It always returns true when auth is disabled.
 func (s *Service) Authenticate(r *http.Request) bool {
-	if !s.cfg.Enabled {
+	if !s.Enabled() {
 		return true
 	}
 	// Session cookie.

@@ -22,6 +22,19 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 	})
 }
 
+// guardMetrics protects /metrics only when auth is enabled and guard_metrics is
+// on. It is evaluated per request so a runtime settings change takes effect
+// without restarting the listener.
+func (s *Server) guardMetrics(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.Auth != nil && s.Auth.Enabled() && s.Auth.GuardMetrics() && !s.Auth.Authenticate(r) {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 type loginRequest struct {
 	Username string `json:"username"`
 	Password string `json:"password"`

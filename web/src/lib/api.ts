@@ -235,13 +235,34 @@ export interface ScoringWeights {
   sensitive_port: number;
 }
 
+export type SettingValue = string | number | boolean;
+
+export interface PendingChange {
+  desired: SettingValue;
+  running: SettingValue;
+}
+
+export interface EditableMeta {
+  key: string;
+  apply: "hot" | "restart";
+}
+
 export interface Settings {
+  values: Record<string, SettingValue>;
+  locked: Record<string, "env" | "flag">;
+  pending_restart: Record<string, PendingChange>;
+  editable: EditableMeta[];
   scoring_weights: ScoringWeights;
-  schedule: string;
-  max_hosts_per_asset: number;
-  max_concurrency: number;
-  retention_days: number;
-  auth_enabled: boolean;
-  encryption_configured: boolean;
   version: string;
+  encryption_configured: boolean;
+  auth_password_set: boolean;
+  config_file: string;
+  restart_required: boolean;
+}
+
+// SettingsUpdate is the partial PUT /settings payload.
+export interface SettingsUpdate {
+  values?: Record<string, SettingValue>;
+  password?: string;
+  scoring_weights?: ScoringWeights;
 }

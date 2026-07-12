@@ -1,7 +1,10 @@
-import { useState } from "react";
+import { useState, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Trash2, Pencil, RefreshCw, Send, KeyRound, Bell, SlidersHorizontal, Server, Download, Upload } from "lucide-react";
-import { api, ShodanKey, Channel, ChannelType, ChannelConfig, Settings, ScoringWeights } from "@/lib/api";
+import {
+  Plus, Trash2, Pencil, RefreshCw, Send, KeyRound, Bell, Server, Download, Upload,
+  Lock, AlertTriangle, ShieldCheck, Clock, Radar, Info,
+} from "lucide-react";
+import { api, ShodanKey, Channel, ChannelType, ChannelConfig, Settings, ScoringWeights, SettingValue, SettingsUpdate } from "@/lib/api";
 import { Panel, SectionTitle, Spinner, Toggle } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/toast";
@@ -11,12 +14,253 @@ export function SettingsPage() {
   return (
     <div className="space-y-6">
       <SectionTitle eyebrow="Configuration" title="Settings" />
+      <RuntimeSettings />
       <ShodanKeys />
       <Channels />
       <ScoringWeightsCard />
       <BackupCard />
-      <RuntimeInfo />
     </div>
+  );
+}
+
+// ---------- Runtime settings (editable, YAML-backed) ----------
+
+type FieldKind = "text" | "number" | "toggle" | "select";
+interface FieldDef {
+  key: string;
+  label: string;
+  kind: FieldKind;
+  step?: number;
+  placeholder?: string;
+  options?: { value: string; label: string }[];
+  help?: string;
+}
+interface SectionDef {
+  eyebrow: string;
+  title: string;
+  icon: ReactNode;
+  fields: FieldDef[];
+  password?: boolean;
+  note?: string;
+}
+
+const SECTIONS: SectionDef[] = [
+  {
+    eyebrow: "Access",
+    title: "Authentication",
+    icon: <ShieldCheck size={15} />,
+    password: true,
+    note: "Enabling authentication requires an admin password. Passwords are stored hashed (argon2id) and never written to the config file.",
+    fields: [
+      { key: "auth.enabled", label: "Require authentication", kind: "toggle" },
+      { key: "auth.username", label: "Admin username", kind: "text", placeholder: "admin" },
+      { key: "auth.guard_metrics", label: "Guard /metrics endpoint", kind: "toggle", help: "When on, /metrics needs auth (its labels expose asset identifiers)." },
+    ],
+  },
+  {
+    eyebrow: "Listener",
+    title: "Server",
+    icon: <Server size={15} />,
+    fields: [
+      { key: "server.port", label: "HTTP port", kind: "number" },
+      { key: "server.address", label: "Bind address", kind: "text", placeholder: "0.0.0.0" },
+      { key: "server.base_url", label: "Public base URL", kind: "text", placeholder: "https://skryol.example.com", help: "Used for deep links in notifications." },
+      { key: "server.enable_cors", label: "Enable CORS", kind: "toggle" },
+    ],
+  },
+  {
+    eyebrow: "Operations",
+    title: "Logging & schedule",
+    icon: <Clock size={15} />,
+    fields: [
+      { key: "log.level", label: "Log level", kind: "select", options: [
+        { value: "debug", label: "debug" }, { value: "info", label: "info" },
+        { value: "warning", label: "warning" }, { value: "error", label: "error" },
+      ] },
+      { key: "log.format", label: "Log format", kind: "select", options: [
+        { value: "json", label: "json" }, { value: "text", label: "text" },
+      ] },
+      { key: "scanner.schedule", label: "Scan schedule (cron)", kind: "text", placeholder: "0 3 * * *", help: "Standard 5-field cron. Applied live." },
+    ],
+  },
+  {
+    eyebrow: "Guardrails",
+    title: "Scanner",
+    icon: <Radar size={15} />,
+    fields: [
+      { key: "scanner.max_hosts_per_asset", label: "Max hosts / asset", kind: "number" },
+      { key: "scanner.max_concurrency", label: "Max concurrency", kind: "number" },
+      { key: "scanner.retention_days", label: "Raw retention (days)", kind: "number", help: "0 keeps all raw reports." },
+      { key: "scanner.rescan_timeout_seconds", label: "Rescan timeout (s)", kind: "number" },
+    ],
+  },
+  {
+    eyebrow: "Upstream",
+    title: "Shodan client",
+    icon: <KeyRound size={15} />,
+    fields: [
+      { key: "shodan.base_url", label: "API base URL", kind: "text", placeholder: "https://api.shodan.io" },
+      { key: "shodan.requests_per_second", label: "Requests / sec (per key)", kind: "number", step: 0.1 },
+      { key: "shodan.max_retries", label: "Max retries", kind: "number" },
+      { key: "shodan.timeout_seconds", label: "Request timeout (s)", kind: "number" },
+    ],
+  },
+];
+
+function RuntimeSettings() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const q = useQuery({ queryKey: ["settings"], queryFn: () => api.get<Settings>("/settings") });
+  const [draft, setDraft] = useState<Record<string, SettingValue> | null>(null);
+  const [pw, setPw] = useState("");
+
+  const save = useMutation({
+    mutationFn: (payload: SettingsUpdate) => api.put<Settings>("/settings", payload),
+    onSuccess: (data) => {
+      qc.setQueryData(["settings"], data);
+      setDraft(null);
+      setPw("");
+      toast("success", data.restart_required ? "Saved — some changes need a restart" : "Settings saved");
+    },
+    onError: (e: Error) => toast("error", e.message),
+  });
+
+  if (q.isLoading || !q.data) return <Panel className="p-4"><Spinner label="Loading settings" /></Panel>;
+  const s = q.data;
+  const values = draft ?? s.values;
+  const setVal = (key: string, v: SettingValue) => setDraft({ ...(draft ?? s.values), [key]: v });
+
+  const saveSection = (sec: SectionDef) => {
+    const vals: Record<string, SettingValue> = {};
+    for (const f of sec.fields) {
+      if (s.locked[f.key]) continue; // never send locked keys
+      vals[f.key] = values[f.key];
+    }
+    const payload: SettingsUpdate = { values: vals };
+    if (sec.password && pw.trim()) payload.password = pw.trim();
+    save.mutate(payload);
+  };
+
+  const pendingKeys = Object.keys(s.pending_restart);
+
+  return (
+    <div className="space-y-6">
+      {s.restart_required && (
+        <div className="flex items-start gap-3 rounded-xl border border-med/40 bg-med/10 px-4 py-3 text-sm">
+          <AlertTriangle size={18} className="mt-0.5 shrink-0 text-med" />
+          <div>
+            <div className="font-medium text-ink">Restart required to apply some changes</div>
+            <div className="mt-1 text-xs text-muted">
+              {pendingKeys.map((k) => (
+                <span key={k} className="mr-3 inline-block metric">
+                  {k}: <span className="text-faint">{String(s.pending_restart[k].running)}</span> → <span className="text-ink">{String(s.pending_restart[k].desired)}</span>
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {SECTIONS.map((sec) => (
+        <Panel key={sec.title} className="p-4">
+          <SectionTitle
+            eyebrow={sec.eyebrow}
+            title={sec.title}
+            action={<button className="btn btn-primary" disabled={save.isPending} onClick={() => saveSection(sec)}>Save</button>}
+          />
+          {sec.note && <p className="mb-4 flex items-start gap-1.5 text-xs text-muted"><Info size={13} className="mt-0.5 shrink-0" /> {sec.note}</p>}
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {sec.fields.map((f) => (
+              <Field
+                key={f.key}
+                def={f}
+                value={values[f.key]}
+                locked={s.locked[f.key]}
+                pending={s.pending_restart[f.key] ? String(s.pending_restart[f.key].running) : undefined}
+                apply={s.editable.find((e) => e.key === f.key)?.apply}
+                onChange={(v) => setVal(f.key, v)}
+              />
+            ))}
+          </div>
+          {sec.password && (
+            <div className="mt-4 max-w-sm border-t border-line/60 pt-4">
+              <label className="label">Set / change admin password</label>
+              <input className="input" type="password" autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Leave blank to keep current" />
+              <p className="mt-1 text-xs text-faint">Min 8 characters. Saved with this section.</p>
+            </div>
+          )}
+        </Panel>
+      ))}
+
+      <InstanceCard s={s} />
+    </div>
+  );
+}
+
+function Field({ def, value, locked, pending, apply, onChange }: {
+  def: FieldDef;
+  value: SettingValue;
+  locked?: "env" | "flag";
+  pending?: string;
+  apply?: "hot" | "restart";
+  onChange: (v: SettingValue) => void;
+}) {
+  const disabled = !!locked;
+  return (
+    <div>
+      <div className="flex items-center gap-2">
+        <label className="label mb-0">{def.label}</label>
+        {locked && (
+          <span className="chip bg-line-2 text-faint" title={`Managed by ${locked}; edit it there`}>
+            <Lock size={10} className="mr-0.5 inline" /> {locked}
+          </span>
+        )}
+        {!locked && apply === "restart" && <span className="chip bg-med/15 text-med" title="Takes effect after a restart">restart</span>}
+      </div>
+      <div className="mt-1">
+        {def.kind === "toggle" ? (
+          <div className="flex h-[38px] items-center"><Toggle checked={!!value} onChange={(v) => onChange(v)} /></div>
+        ) : def.kind === "select" ? (
+          <select className="input" value={String(value ?? "")} disabled={disabled} onChange={(e) => onChange(e.target.value)}>
+            {def.options!.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        ) : def.kind === "number" ? (
+          <input
+            className="input metric" type="number" step={def.step ?? 1} disabled={disabled}
+            value={value === undefined || value === null ? "" : String(value)}
+            onChange={(e) => onChange(e.target.value === "" ? 0 : Number(e.target.value))}
+          />
+        ) : (
+          <input className="input metric" type="text" disabled={disabled} placeholder={def.placeholder}
+            value={String(value ?? "")} onChange={(e) => onChange(e.target.value)} />
+        )}
+      </div>
+      {def.help && <p className="mt-1 text-xs text-faint">{def.help}</p>}
+      {pending !== undefined && <p className="mt-1 text-xs text-med">Pending restart · running: <span className="metric">{pending}</span></p>}
+    </div>
+  );
+}
+
+function InstanceCard({ s }: { s: Settings }) {
+  const row = (label: string, value: ReactNode) => (
+    <div className="flex items-center justify-between border-b border-line/60 py-2 last:border-0">
+      <span className="text-sm text-muted">{label}</span>
+      <span className="metric text-sm text-ink">{value}</span>
+    </div>
+  );
+  return (
+    <Panel className="p-4">
+      <SectionTitle eyebrow="Runtime" title="Instance" />
+      <div className="grid gap-x-8 sm:grid-cols-2">
+        {row("Version", s.version)}
+        {row("Config file", <span className="text-faint">{s.config_file || "—"}</span>)}
+        {row("Encryption", s.encryption_configured ? <span className="text-ok">configured</span> : <span className="text-crit">not set</span>)}
+        {row("Admin password", s.auth_password_set ? <span className="text-ok">set</span> : <span className="text-med">not set</span>)}
+      </div>
+      <p className="mt-3 flex items-center gap-1.5 text-xs text-faint">
+        <Info size={13} /> Edits are written to the config file and applied live where possible; <span className="text-med">restart</span>-tagged fields apply on next start.
+      </p>
+    </Panel>
   );
 }
 
@@ -288,7 +532,7 @@ function ScoringWeightsCard() {
 
   const save = useMutation({
     mutationFn: (weights: ScoringWeights) => api.put<Settings>("/settings", { scoring_weights: weights }),
-    onSuccess: () => { toast("success", "Scoring weights saved"); qc.invalidateQueries({ queryKey: ["settings"] }); setDraft(null); },
+    onSuccess: (data) => { toast("success", "Scoring weights saved"); qc.setQueryData(["settings"], data); setDraft(null); },
     onError: (e: Error) => toast("error", e.message),
   });
 
@@ -306,32 +550,6 @@ function ScoringWeightsCard() {
           ))}
         </div>
       )}
-    </Panel>
-  );
-}
-
-// ---------- Runtime ----------
-function RuntimeInfo() {
-  const settings = useQuery({ queryKey: ["settings"], queryFn: () => api.get<Settings>("/settings") });
-  const s = settings.data;
-  const row = (label: string, value: React.ReactNode) => (
-    <div className="flex items-center justify-between border-b border-line/60 py-2 last:border-0"><span className="text-sm text-muted">{label}</span><span className="metric text-sm text-ink">{value}</span></div>
-  );
-  return (
-    <Panel className="p-4">
-      <SectionTitle eyebrow="Runtime" title="Instance" />
-      {!s ? <Spinner /> : (
-        <div className="grid gap-x-8 sm:grid-cols-2">
-          {row("Version", s.version)}
-          {row("Scan schedule", <span className="text-faint">{s.schedule}</span>)}
-          {row("Max hosts / asset", s.max_hosts_per_asset)}
-          {row("Max concurrency", s.max_concurrency)}
-          {row("Retention", s.retention_days === 0 ? "keep all" : `${s.retention_days} days`)}
-          {row("Encryption", s.encryption_configured ? <span className="text-ok">configured</span> : <span className="text-crit">not set</span>)}
-          {row("Authentication", s.auth_enabled ? <span className="text-ok">enabled</span> : <span className="text-med">open</span>)}
-        </div>
-      )}
-      <div className="mt-3 flex items-center gap-2 text-xs text-faint"><Server size={13} /> Schedule, retention, and concurrency are set via config/env and shown read-only. <SlidersHorizontal size={13} className="ml-2" /> Scoring weights are editable above.</div>
     </Panel>
   );
 }

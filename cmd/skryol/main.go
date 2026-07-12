@@ -28,6 +28,7 @@ import (
 	"github.com/t0mer/skryol/internal/processor"
 	"github.com/t0mer/skryol/internal/scanner"
 	"github.com/t0mer/skryol/internal/scoring"
+	"github.com/t0mer/skryol/internal/settings"
 	"github.com/t0mer/skryol/internal/shodan"
 	"github.com/t0mer/skryol/internal/version"
 )
@@ -88,12 +89,13 @@ func run() error {
 	}
 
 	log := logging.New(cfg.Log.Level, cfg.Log.Format)
+	logger := log.Logger // *slog.Logger handle for constructors
 	log.Info("starting skryol", "version", version.Version, "port", cfg.Server.Port)
 
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	database, err := db.Open(ctx, cfg.Database.Path, log)
+	database, err := db.Open(ctx, cfg.Database.Path, logger)
 	if err != nil {
 		return fmt.Errorf("opening database: %w", err)
 	}
@@ -105,7 +107,7 @@ func run() error {
 		Password:      cfg.Auth.Password,
 		SessionSecret: cfg.Auth.SessionSecret,
 		GuardMetrics:  cfg.Auth.GuardMetrics,
-	}, log)
+	}, logger)
 
 	if *resetPassword {
 		return resetAdminPassword(ctx, authService)
@@ -129,23 +131,23 @@ func run() error {
 		BaseURL:    cfg.Shodan.BaseURL,
 		MaxRetries: cfg.Shodan.MaxRetries,
 		Timeout:    time.Duration(cfg.Shodan.TimeoutSeconds) * time.Second,
-		Logger:     log,
+		Logger:     logger,
 		OnRequest: func(endpoint, outcome string) {
 			m.ShodanRequests.WithLabelValues(endpoint, outcome).Inc()
 		},
 	})
 
-	keyService := keys.NewService(database, cipher, pool, log)
+	keyService := keys.NewService(database, cipher, pool, logger)
 	if err := keyService.Reload(ctx); err != nil {
 		return fmt.Errorf("loading shodan keys: %w", err)
 	}
 
 	channelService := channels.NewService(database, cipher)
 	backupService := backup.NewService(database, cipher, keyService)
-	alertEngine := alerts.New(database, channelService, m, log, cfg.Server.BaseURL)
+	alertEngine := alerts.New(database, channelService, m, logger, cfg.Server.BaseURL)
 
-	scanEngine := scanner.New(database, shodanClient, keyService, m, log, cfg.Scanner)
-	proc := processor.New(database, m, log, func(ctx context.Context) scoring.Weights {
+	scanEngine := scanner.New(database, shodanClient, keyService, m, logger, cfg.Scanner)
+	proc := processor.New(database, m, logger, func(ctx context.Context) scoring.Weights {
 		return database.GetScoringWeights(ctx)
 	})
 	proc.SetAlertEvaluator(alertEngine)
@@ -155,10 +157,12 @@ func run() error {
 	}
 	defer scanEngine.Stop()
 
+	settingsService := settings.New(cfg, log, scanEngine, authService)
+
 	server := api.NewServer(api.Deps{
 		Config:   cfg,
 		DB:       database,
-		Log:      log,
+		Log:      logger,
 		Metrics:  m,
 		Keys:     keyService,
 		Shodan:   shodanClient,
@@ -167,6 +171,7 @@ func run() error {
 		Channels: channelService,
 		Auth:     authService,
 		Backup:   backupService,
+		Settings: settingsService,
 	})
 	router, err := server.Router()
 	if err != nil {
