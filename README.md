@@ -62,40 +62,40 @@ data source, and on-demand rescans go through Shodan's own scan API.
 ### Dashboard
 Fleet KPIs, risk-ranked assets, grade distribution, and the score trend.
 
-![Dashboard](assets/screenshots/dashboard.png)
+![Dashboard](https://raw.githubusercontent.com/t0mer/skryol/main/assets/screenshots/dashboard.png)
 
 ### Asset detail
 Full posture: CVEs, open ports, weaknesses, screenshot services, score history,
 scan history, and the raw report.
 
-![Asset detail](assets/screenshots/asset-detail.png)
+![Asset detail](https://raw.githubusercontent.com/t0mer/skryol/main/assets/screenshots/asset-detail.png)
 
 ### Compare scans
 Structured diff between any two scans — what appeared, what was resolved, CVSS
 changes, and the score delta.
 
-![Compare](assets/screenshots/compare.png)
+![Compare](https://raw.githubusercontent.com/t0mer/skryol/main/assets/screenshots/compare.png)
 
 ### Alerts
 Rules routed to notification channels, plus the firing audit log.
 
-![Alerts](assets/screenshots/alerts.png)
+![Alerts](https://raw.githubusercontent.com/t0mer/skryol/main/assets/screenshots/alerts.png)
 
 ### Settings
 Shodan keys with live credit/health, notification channels, the tunable scoring
 weights, and backup/migrate.
 
-![Settings](assets/screenshots/settings.png)
+![Settings](https://raw.githubusercontent.com/t0mer/skryol/main/assets/screenshots/settings.png)
 
 ### Assets
 CRUD, enable/disable, per-asset "Scan now".
 
-![Assets](assets/screenshots/assets.png)
+![Assets](https://raw.githubusercontent.com/t0mer/skryol/main/assets/screenshots/assets.png)
 
 ### Mobile
 Responsive and dark by default, down to ~360px.
 
-<img src="assets/screenshots/dashboard-mobile.png" width="360" alt="Mobile dashboard" />
+<img src="https://raw.githubusercontent.com/t0mer/skryol/main/assets/screenshots/dashboard-mobile.png" width="360" alt="Mobile dashboard" />
 
 ## Quick start
 
